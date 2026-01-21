@@ -16,7 +16,7 @@ measurement values
 
 class SEN66:
     address = 0x6b #107
-    clean_interval= (86400, 2*86400) # clean every other day the fan
+    clean_interval_bounds= (86400,2*86400) # clean every other day the fan
     mode = 'idle'
     commands = {
                 'activate_sht_heater': {'code': [0x67, 0x65], 'delay':20, 'length':0, 'mode': 'idle'},
@@ -57,7 +57,7 @@ class SEN66:
         self.__I2C_scan()
         self.wdt_feed()
         self.get_id()
-        self.fan_cleaning_interval = random.randint(self.clean_interval[0], self.clean_interval[1])
+        self.clean_interval = random.randint(self.clean_interval_bounds[0], self.clean_interval_bounds[1])
         self.t0 = time.time()
         self.wdt_feed()
         
@@ -140,7 +140,7 @@ class SEN66:
         
     def get_data(self):
         if self.mode != 'measurement':
-            raise Error('device not in measurement mode!')
+            raise Exception('device not in measurement mode!')
         ready = self.__I2C_write('get_data_ready')
         data = None
         if ready[1] == 1:
@@ -161,13 +161,14 @@ class SEN66:
     def clean(self, force=False):
         now = time.time()
         self.wdt_feed()
-        if force or ((now - self.t0) > self.fan_cleaning_interval):
+        if force or ((now - self.t0) > self.clean_interval):
             print('cleaning fan!')
             # set new times
-            self.fan_cleaning_interval = random.randint(self.clean_interval[0], self.clean_interval[1])
+            self.clean_interval = random.randint(self.clean_interval_bounds[0], self.clean_interval_bounds[1])
             self.t0 = now
             # stop measurement, clean, and start gain
             self.__I2C_write('stop_measurement')
+            self.wdt_feed()
             time.sleep(1)
             self.__I2C_write('start_fan_cleaning')
             for ii in range(5):
@@ -185,6 +186,7 @@ class SEN66:
         self.wdt_feed()
         bus = self.i2c.scan()
         if (len(bus) > 10) or (self.address not in bus):
+            print(bus, self.address)
             raise OSError("device not found! Are the cables connected?")
 
     def __I2C_write(self, command):
@@ -217,11 +219,17 @@ class SEN66:
         return crc
     
 if __name__ == "__main__":
-    i2c0 = machine.I2C(0, sda=machine.Pin(0), scl=machine.Pin(1), freq=100000)
+    i2c0 = machine.I2C(1, sda=machine.Pin(18), scl=machine.Pin(19), freq=100000)
     sen = SEN66(i2c0)
     sen.start()
-    for ii in range(5):
-        print(sen.get_data())
-        time.sleep(1)
+    sen.clean(force=True) # force a cleanup of the sensor
+    #for ii in range(5):
+    running = True
+    while running:
+        try:
+            print(sen.get_data())
+            time.sleep(1)
+        except KeyboardInterrupt:
+            running = False
 
     
